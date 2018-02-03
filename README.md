@@ -27,9 +27,7 @@ This is an attempt to see how Homebrew works, based on the great idea behind Lin
 # STEPS
   - export HOMEBREW_EDITOR=./filter_brew_formula.pl
   - brew create https://cpan.metacpan.org/authors/id/M/MA/MATTP/Test-WWW-Selenium-1.36.tar.gz --autotools --set-name perl-test-www-selenium --tap jfrotz/scratchperl5modules
-  
-# TODO
-  - Build filter_brew_formula.pl
-  - Read the ruby code on the passed path.
-  - Rewrite it so that standard format (--autotools) is rewritten based on how the CPAN module tarball wants to be invoked (Makefile.PL, Build.PL, others).
-  
+
+# TESTING
+  - brew install perl-test-www-selenium
+  - brew test perl-test-www-selenium
