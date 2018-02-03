@@ -25,4 +25,11 @@ This is an attempt to see how Homebrew works, based on the great idea behind Lin
   - SSH keys (recommended)
 
 # STEPS
-  - Reverse-engineer the bottle references.  I see them in the Formulae .rb files, but I don't see them anywhere in the git repos.
+  - export HOMEBREW_EDITOR=./filter_brew_formula.pl
+  - brew create https://cpan.metacpan.org/authors/id/M/MA/MATTP/Test-WWW-Selenium-1.36.tar.gz --autotools --set-name perl-test-www-selenium --tap jfrotz/scratchperl5modules
+  
+# TODO
+  - Build filter_brew_formula.pl
+  - Read the ruby code on the passed path.
+  - Rewrite it so that standard format (--autotools) is rewritten based on how the CPAN module tarball wants to be invoked (Makefile.PL, Build.PL, others).
+  
