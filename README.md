@@ -1,7 +1,7 @@
-# scratchbrewpi
+# homebrew-scratchbrewpi
 Experiments creating Raspberry Pi based LinuxBrew tap for Perl modules.
 
-THEORY:
+# THEORY:
   - Traversing a Perl application and its dependency matrix can identify the Formulae which needs to be created in a third-party Tap.
   
   # Experiment
