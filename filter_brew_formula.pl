@@ -38,7 +38,6 @@ sub	main
     my( $tarball )	= find_cached_tarball( $cache, $formula );
 
     transform_formula( $file, $tarball );
-#    unlink( $tarball );
 }
 
 
@@ -90,19 +89,29 @@ sub	transform_formula
 	    {
 		next;
 	    }
-	    elsif  ($line =~ /\.\/configure/)
+	    elsif  ($line =~ /desc/)
 	    {
-		$i += 4;
-		$state = "keep-comments";
-		push( @newlines, "    # Crack open dist and interrogate build system." );
-		push( @newlines, examine_dist_build( $tarball ) );
+		$i += 1;
+		push( @newlines, extract_dist_metadata( $tarball ) );
 		next;
+	    }
+	    elsif  ($line =~ /def install/)
+	    {
+		push( @newlines, examine_dist( $tarball ) );
+		last;
 	    }
 	    push( @newlines, $line );
 	}
 	
-	print join( "\n", @newlines );
-	unlink( $file );
+	if  (open( RB, ">$file" ))
+	{
+	    print RB join( "\n", @newlines );
+	    close( RB );
+	}
+	else
+	{
+	    print "ERROR: Unable to re-write formula: $file: $!\n";
+	}
     }
     else
     {
@@ -114,7 +123,7 @@ sub	transform_formula
 
 
 #----------------------------------------------------------------------
-sub	examine_dist_build
+sub	examine_dist
 {
     my( $tarball )	= shift;
     my( @newlines );
@@ -123,23 +132,75 @@ sub	examine_dist_build
     $opts		= "tjvf"	if  ($tarball =~ /.bz2/);
     my( $cmd )		= "tar $opts $tarball";
     
-    print "EXEC: $cmd\n";
     my( @output )	= `$cmd`;
-    print "OUTPUT:\n";
-    print "----------------------------------------------------------------------\n";
-    print @output;
-    print "----------------------------------------------------------------------\n";
-
     my( $prefix )	= `brew --prefix`;
+    chomp( $prefix );
+    my( @parts )	= split( /\s+/, $output[0] );
+    my( $class )	= pop( @parts );
+    chomp( $class );
+    chop( $class );			## Trailing slash
+    push( @newlines,
+	  "",
+	);
     foreach my $line (@output)
     {
 	if  ($line =~ /Makefile.PL/)
 	{
-	    push( @newlines, "    system, \"perl Makefile.PL\"" );
-	    push( @newlines, "    system, \"make install PREFIX=$prefix\"" );
+	    push( @newlines, 
+		  "  def install",
+		  "    system, \"perl Makefile.PL\"",
+		  "    system, \"make install PREFIX=$prefix\"",
+		  "  end",
+		  "  test do",
+		  "    system, \"make test\"",
+		  "  end",
+		  "",
+		);
+	}
+	if  ($line =~ /Build.PL/)
+	{
+	    push( @newlines, 
+		  "  def install",
+		  "    system, \"perl Build.PL\"",
+		  "    system, \"perl Build\"",
+		  "    system, \"perl Build install --destdir $prefix\"",
+		  "  end",
+		  "  test do",
+		  "    system, \"perl Build test\"",
+		  "  end",
+		  "",
+		);
+	    push( @newlines, "    system, \"perl Buil.PL\"" );
+	    push( @newlines, "    system, \"perl Build --destdir $prefix\"" );
 	}
     }
 
-    print join( "\n", @newlines );
     return( @newlines );    
+}
+
+
+
+
+#----------------------------------------------------------------------
+sub	extract_dist_metadata
+{
+    my( $tarball )	= shift;
+    my( $opts )		= "xOzf";
+    $opts		= "xOjf"	if  ($tarball =~ /\.bz2/);
+    my( $cmd )		= "tar $opts $tarball --wildcards \"*/META.yml\"";
+    my( @lines )	= `$cmd`;
+    my( @newlines );
+    foreach my $line (@lines)
+    {
+	chomp( $line );
+	if  ($line =~ /abstract: '(.+)'/)
+	{
+	    push( @newlines, "    desc \"$1\"" );
+	}
+	elsif  ($line =~ /homepage: (.+)/)
+	{
+	    push( @newlines, "    homepage \"$1\"" );
+	}
+    }
+    return( @newlines );
 }
