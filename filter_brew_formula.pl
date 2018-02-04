@@ -65,14 +65,26 @@ sub	main
 	file	=> $file,				## The current module we're creating.
 	tap	=> "jfrotz/scratchperl5modules",	## The tap we're writing into.
 	count	=> 0,					## Number of dependencies we've found.
+	debug	=> 1,
+	filter	=> $0,
+	cache	=> "$ENV{HOME}/.cache/Homebrew",
     };
     my( @parts )	= split( /\//, $cfg->{file} );
     $cfg->{formula}	= pop( @parts );
-    $cfg->{cache}	= "$ENV{HOME}/.cache/Homebrew";
-    $cfg->{filter}	= $0;				## Capture so that we can emit a HOMEBREW_EDITOR expansion.
+
+    if  ($cfg->{debug})
+    {
+	print "INVOKE: $cfg->{filter} $cfg->{file}\n";
+    }
 
     find_cached_tarball( $cfg );
     transform_formula( $cfg );
+    if  ($cfg->{debug})
+    {
+	print "--[Diagnostics]----------------------------------------------------------------------\n";
+	print Dumper( $cfg );
+	print "--[Audit]----------------------------------------------------------------------\n";
+    }
 }
 
 
@@ -153,6 +165,18 @@ sub	transform_formula
 	my( @lines )	= <RB>;
 	close( RB );
 
+	if  ($cfg->{debug})
+	{
+	    print "--[Original]----------------------------------------------------------------------\n";
+	    print @lines;
+	}
+
+	my( $opts )	= "xOzf";
+	$opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
+	my( $cmd )	= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
+	my( @yaml )	= `$cmd`;
+	$cfg->{yaml}	= \@yaml;
+	
 	my( $state )	= "";
 	for( my $i=0; $i < @lines; $i++ )
 	{
@@ -162,9 +186,13 @@ sub	transform_formula
 	    {
 		next;
 	    }
+	    elsif ($line =~ /(class .+)/)
+	    {
+		push( @newlines, $1 );
+		next;
+	    }
 	    elsif  ($line =~ /desc/)
 	    {
-		$i += 1;
 		push( @newlines, extract_dist_metadata( $cfg ) );
 		next;
 	    }
@@ -180,6 +208,11 @@ sub	transform_formula
 	{
 	    print RB join( "\n", @newlines );
 	    close( RB );
+	    if  ($cfg->{debug})
+	    {
+		print "--[Generated]----------------------------------------------------------------------\n";
+		print join( "\n", @newlines );
+	    }
 	}
 	else
 	{
@@ -238,39 +271,57 @@ sub	examine_dist
 	  extract_dist_dependencies( $cfg ),
 	  "",
 	);
+    my( $state )	= "searching";
     foreach my $line (@output)
     {
-	if  ($line =~ /Makefile.PL/)
+	if  ($state eq "searching")
 	{
-	    push( @newlines, 
-		  "  def install",
-		  "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
-		  "    system \"make\", \"install\"",
-		  "  end",
-		  "  test do",
-		  "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
-		  "    system \"make\", \"test\"",
-		  "  end",
-		  "end",
-		  "",
-		);
-	}
-	if  ($line =~ /Build.PL/)
-	{
-	    push( @newlines, 
-		  "  def install",
-		  "    system \"perl\", \"Build.PL\"",
-		  "    system \"perl\", \"Build\"",
-		  "    system \"perl\", \"Build install --destdir $prefix\"",
-		  "  end",
-		  "  test do",
-		  "    system \"perl\", \"Build.PL\"",
-		  "    system \"perl\", \"Build\"",
-		  "    system \"perl\", \"Build test\"",
-		  "  end",
-		  "end",
-		  "",
-		);
+	    my( @parts ) = split( /\//, $line );
+
+	    next	if  (@parts > 3);		## subcomponent build
+
+	    if  ($line =~ /Makefile.PL/)
+	    {
+		if  ($cfg->{debug})
+		{
+		    print "LINE: $line";
+		}
+		push( @newlines, 
+		      "  def install",
+		      "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		      "    system \"make\", \"install\"",
+		      "  end",
+		      "  test do",
+		      "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		      "    system \"make\", \"test\"",
+		      "  end",
+		      "end",
+		      "",
+		    );
+		$state = "found";
+	    }
+	    elsif  ($line =~ /Build.PL/)
+	    {
+		if  ($cfg->{debug})
+		{
+		    print "LINE: $line";
+		}
+		push( @newlines, 
+		      "  def install",
+		      "    system \"perl\", \"Build.PL\"",
+		      "    system \"perl\", \"Build\"",
+		      "    system \"perl\", \"Build install --destdir $prefix\"",
+		      "  end",
+		      "  test do",
+		      "    system \"perl\", \"Build.PL\"",
+		      "    system \"perl\", \"Build\"",
+		      "    system \"perl\", \"Build test\"",
+		      "  end",
+		      "end",
+		      "",
+		    );
+		$state = "found";
+	    }
 	}
     }
     return( @newlines );    
@@ -299,24 +350,24 @@ for our Linuxbrew formula.
 sub	extract_dist_metadata
 {
     my( $cfg )		= shift;
-    my( $opts )		= "xOzf";
-    $opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
-    my( $cmd )		= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
-    my( @lines )	= `$cmd`;
-    $cfg->{yaml}	= \@lines;
-    my( @newlines );
+    my( @lines )	= @{ $cfg->{yaml} };
+    $cfg->{abstract}	= "";
+    $cfg->{homepage}	= "https://cpan.metacpan.org/";
     foreach my $line (@lines)
     {
 	chomp( $line );
 	if  ($line =~ /abstract: '(.+)'/)
 	{
-	    push( @newlines, "  desc \"$1\"" );
+	    $cfg->{abstract}	= $1;
 	}
 	elsif  ($line =~ /homepage: (.+)/)
 	{
-	    push( @newlines, "  homepage \"$1\"" );
+	    $cfg->{homepage}	= $1;		## Replace the default page.
 	}
     }
+    my( @newlines );
+    push( @newlines, "  desc \"$cfg->{abstract}\"" );
+    push( @newlines, "  homepage \"$cfg->{homepage}\"" );
     return( @newlines );
 }
 
@@ -350,7 +401,7 @@ For each dependency we determine if we have to generate a Linuxbrew
 sub	extract_dist_dependencies
 {
     my( $cfg )		= shift;
-    my( @lines )	= @{ $cfg->{yaml} };		## Saved off by our last FSA
+    my( @lines )	= @{ $cfg->{yaml} };
     $cfg->{seen}	=
     {
 	"perl-perl"	=> 1,
@@ -364,8 +415,8 @@ sub	extract_dist_dependencies
 	{
 	    my( $class )	= $1;
 	    my( $dependency )	= "";
-	    $dependency		= " => :build"		if  ($class eq "build_requires");
-	    $dependency		= " => :build"		if  ($class eq "configure_requires");
+	    $dependency		= "=> :build"		if  ($class eq "build_requires");
+	    $dependency		= "=> :build"		if  ($class eq "configure_requires");
 
 	    $i++;
 	    while( $lines[$i] =~ /^\s+(\S+?): /)
@@ -480,7 +531,7 @@ sub	emit_prerequisite_brew_create_commands
 			$cfg->{count}++;
 		    }
 		}
-		push( @newlines, "  depends_on \"$formula\"\t$dependency" );
+		push( @newlines, "  depends_on \"$formula\" $dependency" );
 		$seen->{$formula}	= 1;
 	    }
 	}
