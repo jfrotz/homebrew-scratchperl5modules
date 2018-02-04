@@ -8,7 +8,7 @@ filter_brew_formula.pl
 
 =head1	USAGE
 
-export HOMEBREW_EDITOR=./filter_brew_formula.pl
+export HOMEBREW_EDITOR="perl ./filter_brew_formula.pl"
 brew create https://cpan.metacpan.org/authors/id/M/MA/MATTP/Test-WWW-Selenium-1.36.tar.gz --autotools --set-name perl-test-www-selenium --tap jfrotz/scratchperl5modules
 
 =head1	DESCRIPTION
@@ -16,8 +16,18 @@ brew create https://cpan.metacpan.org/authors/id/M/MA/MATTP/Test-WWW-Selenium-1.
 This filter transforms / fixes up the generated Homebrew Formula file that
 was created by "brew create".
 
-We take some liberties with the configuration file in the way that we 
-rewrite it.
+The Homebrew documentation is a little light on the correct sequence
+of commands to call, so we use --autotools as a standardized format to
+transform into the build and test steps expected by the specified CPAN
+module.
+
+We have to be slightly tricky since we bounce in and out of a
+Linuxbrew environment.
+
+Our invocation has access to a Linuxbrew "perl", while our runtime is
+significantly restricted by the restricted Linuxbrew "brew create"
+command.  We have to traverse the paths available to us at runtime
+to find our Perl.
 
 =cut
 
@@ -32,6 +42,21 @@ exit( 0 );
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2 main( $file )
+
+USAGE:
+
+    main( @ARGV );
+    exit( 0 );
+
+DESCRIPTION:
+
+This is the main entry point into this filter.
+
+=cut
+
 sub	main
 {
     my( $file )		= shift;
@@ -55,6 +80,22 @@ sub	main
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2 find_cached_tarball( $cfg )
+
+USAGE:
+
+    find_cached_tarball( $cfg );
+
+DESCRIPTION:
+
+This method identifies the path where Linuxbrew "brew create"
+downloaded the specified CPAN module URL.  Found in $ENV{HOME}/.cache
+on my Raspberry Pi.
+
+=cut
+
 sub	find_cached_tarball
 {
     my( $cfg )		= shift;
@@ -86,6 +127,22 @@ sub	find_cached_tarball
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2	transform_formula()
+
+USAGE:
+
+    transform_formula( $cfg );
+
+DESCRIPTION:
+
+This method opens the Linuxbrew "brew create"d formula in our tap and
+uses a finite state automata (FSA) to figure out how to generate
+appropriate ruby so that Linuxbrew creates our (source) forumla.
+
+=cut
+
 sub	transform_formula
 {
     my( $cfg )		= shift;
@@ -138,7 +195,28 @@ sub	transform_formula
 
 
 
+
+
 #----------------------------------------------------------------------
+=pod
+
+=head2	examine_dist()
+
+USAGE:
+
+    examine_dist( $cfg );
+
+DESCRIPTION:
+
+Invoked by our formula finite state automata, this method trolls
+through the cached CPAN module tarball for the build step signature
+required by our formula's "def install" and "test do" stanzas.
+
+We delegate dependency identification to yet another finite state
+automata.
+
+=cut
+
 sub	examine_dist
 {
     my( $cfg )		= shift;
@@ -203,6 +281,21 @@ sub	examine_dist
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2	extract_dist_metadata()
+
+USAGE:
+
+    push( @newlines, examine_dist( $cfg ) );
+
+DESCRIPTION:
+
+We extract, cache and parse META.yml for abstract: and homepage: data
+for our Linuxbrew formula.
+
+=cut
+
 sub	extract_dist_metadata
 {
     my( $cfg )		= shift;
@@ -210,6 +303,7 @@ sub	extract_dist_metadata
     $opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
     my( $cmd )		= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
     my( @lines )	= `$cmd`;
+    $cfg->{yaml}	= \@lines;
     my( @newlines );
     foreach my $line (@lines)
     {
@@ -231,13 +325,32 @@ sub	extract_dist_metadata
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2	exstract_dist_dependencies()
+
+USAGE:
+
+    push( @newlines, extract_dist_metadata( $cfg ) );
+
+DESCRIPTION:
+
+We parse through META.yml recognizing all /(.*requires):\s*$/
+segments and from there each indented requirement.
+
+We know that if "perl" is already Linuxbrew installed, that the
+signature we will find for Perl Core will show up as "perl-perl", so
+we pre-see it.
+
+For each dependency we determine if we have to generate a Linuxbrew
+"brew create" invocation, or if we already have one.
+
+=cut
+
 sub	extract_dist_dependencies
 {
     my( $cfg )		= shift;
-    my( $opts )		= "xOzf";
-    $opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
-    my( $cmd )		= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
-    my( @lines )	= `$cmd`;
+    my( @lines )	= @{ $cfg->{yaml} };		## Saved off by our last FSA
     $cfg->{seen}	=
     {
 	"perl-perl"	=> 1,
@@ -272,6 +385,48 @@ sub	extract_dist_dependencies
 
 
 #----------------------------------------------------------------------
+=pod
+
+=head2	emit_prerequisite_brew_create_commands()
+
+USAGE:
+
+    push( @newlines, emit_prerequisite_brew_create_commands( $cfg, $module, $dependency, $cfg->{seen} ) );
+
+DESCRIPTION:
+
+This finite state automata will zcat the CPAN
+02packages.details.txt.gz file installed by the Linuxbrew "perl" cpan
+command, found in $ENV{HOME}/.cpan/sources/modules on my Raspberry Pi.
+
+Each found dependency does the zcat so that we are memory neutral on a
+Raspberry Pi.  Otherwise, we might have just sucked it into memory in
+@{ $cfg->{cpan} } for speed.
+
+Diagnostics are commented out so that the Linuxbrew "brew create"
+output is appropriately spartan.
+
+Here we are deep inside the Linuxbrew "brew create" runtime so we
+have to determine if our tap already has a formula (whether it has
+been checked into git and pushed or not).  
+
+We also determine if we have previously seen a prerequisite CPAN
+module.  If not, we deposit an ephemeral invocation shell script which
+will be chained by ./brew_a_cup.pl above us in the process tree.
+Because ./brew_a_cup.pl will pick up and execute each invocation
+script, we only generate one if one hasn't been generated by a
+different process invocation.
+
+We assume that $ENV{HOME}/.cpan and $ENV{HOME}/.cache exist.
+
+We assume that $ENV{HOMEBREW_LIBRARY} is consistently structured
+across different Linuxbrew deployments.
+
+We only emit the 'depends_on "formula"' syntax to the calling FSA
+if we have not already seen it in this run.
+
+=cut
+
 sub	emit_prerequisite_brew_create_commands
 {
     my( $cfg )		= shift;
@@ -292,7 +447,6 @@ sub	emit_prerequisite_brew_create_commands
 	    my( @parts )	= split( /\s+/, $dep );
 	    my( $match )	= $parts[0];
 	    
-	    
 	    next		unless( $module eq $match );
 #	    print "* $dep\n";
 	    
@@ -310,7 +464,7 @@ sub	emit_prerequisite_brew_create_commands
 		    {
 			if (open( CREATE, ">$ENV{HOME}/.cache/$formula" ))
 			{
-			    print CREATE "export HOMEBREW_EDITOR=\"perl $cfg->{filer}\"\n";
+			    print CREATE "export HOMEBREW_EDITOR=\"perl $cfg->{filter}\"\n";
 			    print CREATE join( " ",
 					       "brew create https://cpan.metacpan.org/authors/id/$package",
 					       "--autotools",
