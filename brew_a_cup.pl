@@ -15,6 +15,9 @@ perl brew_a_cup.pl Test::WWW:Selenium
 This controller will "brew create" the passed CPAN module and all
 dependencies in the our tap.
 
+This implementation deliberately avoids the use of anything outside of
+Perl Core so that the bootstrap problem is minimized.
+
 =cut
 
 use strict;
@@ -53,7 +56,7 @@ sub	main
 	tap	=> "jfrotz/scratchperl5modules",	## The tap we're writing into.
 	filter	=> "./filter_brew_formula.pl",		## Invoked by Linuxbrew "brew create"
 	count	=> 0,					## Number of dependencies we've found.
-	dir	=> "$ENV{HOME}/.cache",
+	cache	=> "$ENV{HOME}/.cache",
 	cups	=> {},					## $cfg->{cups}->{$formula} = 0 when needing to be poured
     };
     
@@ -94,7 +97,7 @@ sub	brew_first_cup
     $cfg->{count}++;
     my( $formula )	= pour_first_cup( $cfg, $module );
     print "$cfg->{count}: Brewing a cup of $formula...\n";
-    `sh $formula`;
+    `sh $cfg->{cache}/$formula`;
     $cfg->{cups}->{$formula}	= 1;
 }
 
@@ -120,15 +123,15 @@ sub	rinse_cups
 {
     my( $cfg )	= shift;
 
-    opendir( DIRP, $cfg->{dir} );
+    opendir( DIRP, $cfg->{cache} );
     my( @entries ) = sort( readdir( DIRP ) );
     closedir( DIRP );
 
     foreach my $entry (@entries)
     {
-	if (-f "$cfg->{dir}/$entry" && $entry =~ /perl-/)
+	if (-f "$cfg->{cache}/$entry" && $entry =~ /perl-/)
 	{
-	    unlink( "$cfg->{dir}/$entry" );
+	    unlink( "$cfg->{cache}/$entry" );
 	}
     }
 
@@ -160,14 +163,14 @@ sub	more_cups
 {
     my( $cfg )	= shift;
 
-    opendir( DIRP, $cfg->{dir} );
+    opendir( DIRP, $cfg->{cache} );
     my( @entries ) = sort( readdir( DIRP ) );
     closedir( DIRP );
 
     my( $found )	= 0;
     foreach my $entry (@entries)
     {
-	if (-f "$cfg->{dir}/$entry" && $entry =~ /perl-/)
+	if (-f "$cfg->{cache}/$entry" && $entry =~ /perl-/)
 	{
 	    unless( exists( $cfg->{cups}->{$entry} ) )
 	    {
@@ -207,7 +210,7 @@ sub	pour_next_cup
 	{
 	    $cfg->{count}++;
 	    print "$cfg->{count}: Brewing a cup of $formula...\n";
-	    `sh $cfg->{dir}/$formula`;
+	    `sh $cfg->{cache}/$formula`;
 	    $cfg->{cups}->{$formula}	= 1;
 	}
     }
