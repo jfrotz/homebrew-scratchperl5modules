@@ -28,24 +28,38 @@ main( @ARGV );
 exit( 0 );
 
 
+
+
+
 #----------------------------------------------------------------------
 sub	main
 {
     my( $file )		= shift;
-    my( @parts )	= split( /\//, $file );
-    my( $formula )	= pop( @parts );
-    my( $cache )	= "$ENV{HOME}/.cache/Homebrew";
-    my( $tarball )	= find_cached_tarball( $cache, $formula );
+    my( $cfg )		= 
+    {
+	file	=> $file,				## The current module we're creating.
+	tap	=> "jfrotz/scratchperl5modules",	## The tap we're writing into.
+	count	=> 0,					## Number of dependencies we've found.
+    };
+    my( @parts )	= split( /\//, $cfg->{file} );
+    $cfg->{formula}	= pop( @parts );
+    $cfg->{cache}	= "$ENV{HOME}/.cache/Homebrew";
+    $cfg->{filter}	= $0;				## Capture so that we can emit a HOMEBREW_EDITOR expansion.
 
-    transform_formula( $file, $tarball );
+    find_cached_tarball( $cfg );
+    transform_formula( $cfg );
 }
+
+
+
 
 
 #----------------------------------------------------------------------
 sub	find_cached_tarball
 {
-    my( $dir )		= shift;
-    my( $formula )	= shift;
+    my( $cfg )		= shift;
+    my( $dir )		= $cfg->{cache};
+    my( $formula )	= $cfg->{formula};
     my( $tarball )	= "";
 
     $formula		=~ s/\.rb$//g;
@@ -64,18 +78,20 @@ sub	find_cached_tarball
 	    }
 	}
     }
-    return( $tarball );
+    $cfg->{tarball}	= $tarball;
 }
+
+
+
 
 
 #----------------------------------------------------------------------
 sub	transform_formula
 {
-    my( $file )		= shift;
-    my( $tarball )	= shift;
+    my( $cfg )		= shift;
     my( @newlines );
 
-    if (open( RB, $file ))
+    if (open( RB, $cfg->{file} ))
     {
 	my( @lines )	= <RB>;
 	close( RB );
@@ -92,30 +108,30 @@ sub	transform_formula
 	    elsif  ($line =~ /desc/)
 	    {
 		$i += 1;
-		push( @newlines, extract_dist_metadata( $tarball ) );
+		push( @newlines, extract_dist_metadata( $cfg ) );
 		next;
 	    }
 	    elsif  ($line =~ /def install/)
 	    {
-		push( @newlines, examine_dist( $tarball ) );
+		push( @newlines, examine_dist( $cfg ) );
 		last;
 	    }
 	    push( @newlines, $line );
 	}
 	
-	if  (open( RB, ">$file" ))
+	if  (open( RB, ">$cfg->{file}" ))
 	{
 	    print RB join( "\n", @newlines );
 	    close( RB );
 	}
 	else
 	{
-	    print "ERROR: Unable to re-write formula: $file: $!\n";
+	    print "ERROR: Unable to re-write formula: $cfg->{file}: $!\n";
 	}
     }
     else
     {
-	print "ERROR: Unable to read formula: $file: $!\n";
+	print "ERROR: Unable to read formula: $cfg->{file}: $!\n";
     }
     return( @newlines );
 }
@@ -125,12 +141,12 @@ sub	transform_formula
 #----------------------------------------------------------------------
 sub	examine_dist
 {
-    my( $tarball )	= shift;
+    my( $cfg )		= shift;
     my( @newlines );
 
     my( $opts )		= "tzvf";
-    $opts		= "tjvf"	if  ($tarball =~ /.bz2/);
-    my( $cmd )		= "tar $opts $tarball";
+    $opts		= "tjvf"	if  ($cfg->{tarball} =~ /.bz2/);
+    my( $cmd )		= "tar $opts $cfg->{tarball}";
     
     my( @output )	= `$cmd`;
     my( $prefix )	= `brew --prefix`;
@@ -141,6 +157,8 @@ sub	examine_dist
     chop( $class );			## Trailing slash
     push( @newlines,
 	  "",
+	  extract_dist_dependencies( $cfg ),
+	  "",
 	);
     foreach my $line (@output)
     {
@@ -148,12 +166,14 @@ sub	examine_dist
 	{
 	    push( @newlines, 
 		  "  def install",
-		  "    system, \"perl Makefile.PL\"",
-		  "    system, \"make install PREFIX=$prefix\"",
+		  "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		  "    system \"make\", \"install\"",
 		  "  end",
 		  "  test do",
-		  "    system, \"make test\"",
+		  "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		  "    system \"make\", \"test\"",
 		  "  end",
+		  "end",
 		  "",
 		);
 	}
@@ -161,22 +181,23 @@ sub	examine_dist
 	{
 	    push( @newlines, 
 		  "  def install",
-		  "    system, \"perl Build.PL\"",
-		  "    system, \"perl Build\"",
-		  "    system, \"perl Build install --destdir $prefix\"",
+		  "    system \"perl\", \"Build.PL\"",
+		  "    system \"perl\", \"Build\"",
+		  "    system \"perl\", \"Build install --destdir $prefix\"",
 		  "  end",
 		  "  test do",
-		  "    system, \"perl Build test\"",
+		  "    system \"perl\", \"Build.PL\"",
+		  "    system \"perl\", \"Build\"",
+		  "    system \"perl\", \"Build test\"",
 		  "  end",
+		  "end",
 		  "",
 		);
-	    push( @newlines, "    system, \"perl Buil.PL\"" );
-	    push( @newlines, "    system, \"perl Build --destdir $prefix\"" );
 	}
     }
-
     return( @newlines );    
 }
+
 
 
 
@@ -184,10 +205,10 @@ sub	examine_dist
 #----------------------------------------------------------------------
 sub	extract_dist_metadata
 {
-    my( $tarball )	= shift;
+    my( $cfg )		= shift;
     my( $opts )		= "xOzf";
-    $opts		= "xOjf"	if  ($tarball =~ /\.bz2/);
-    my( $cmd )		= "tar $opts $tarball --wildcards \"*/META.yml\"";
+    $opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
+    my( $cmd )		= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
     my( @lines )	= `$cmd`;
     my( @newlines );
     foreach my $line (@lines)
@@ -195,12 +216,121 @@ sub	extract_dist_metadata
 	chomp( $line );
 	if  ($line =~ /abstract: '(.+)'/)
 	{
-	    push( @newlines, "    desc \"$1\"" );
+	    push( @newlines, "  desc \"$1\"" );
 	}
 	elsif  ($line =~ /homepage: (.+)/)
 	{
-	    push( @newlines, "    homepage \"$1\"" );
+	    push( @newlines, "  homepage \"$1\"" );
 	}
     }
     return( @newlines );
+}
+
+
+
+
+
+#----------------------------------------------------------------------
+sub	extract_dist_dependencies
+{
+    my( $cfg )		= shift;
+    my( $opts )		= "xOzf";
+    $opts		= "xOjf"	if  ($cfg->{tarball} =~ /\.bz2/);
+    my( $cmd )		= "tar $opts $cfg->{tarball} --wildcards \"*/META.yml\"";
+    my( @lines )	= `$cmd`;
+    $cfg->{seen}	=
+    {
+	"perl-perl"	=> 1,
+    };
+    my( @newlines );
+    for( my $i=0; $i < @lines; $i++ )
+    {
+	my( $line )	= $lines[$i];
+	chomp( $line );
+	if  ($line =~ /(.*requires):\s*$/)
+	{
+	    my( $class )	= $1;
+	    my( $dependency )	= "";
+	    $dependency		= " => :build"		if  ($class eq "build_requires");
+	    $dependency		= " => :build"		if  ($class eq "configure_requires");
+
+	    $i++;
+	    while( $lines[$i] =~ /^\s+(\S+?): /)
+	    {
+		my( $module )	= $1;
+		push( @newlines, emit_prerequisite_brew_create_commands( $cfg, $module, $dependency, $cfg->{seen} ) );
+		$i++;
+	    }
+	    next;
+	}
+    }
+    return( @newlines );
+}
+
+
+
+
+
+#----------------------------------------------------------------------
+sub	emit_prerequisite_brew_create_commands
+{
+    my( $cfg )		= shift;
+    my( $module )	= shift;
+    my( $dependency )	= shift;
+    my( $seen )		= shift;
+    
+    if( -f "$ENV{HOME}/.cpan/sources/modules/02packages.details.txt.gz" )
+    {
+	my( $cmd )	= "zcat $ENV{HOME}/.cpan/sources/modules/02packages.details.txt.gz | grep $module";
+#	print "EXEC: [$module]: $cmd\n";
+	my( @modules )	= `$cmd`;
+	my( @newlines );
+	foreach my $dep (@modules)
+	{
+	    chomp( $dep );
+	    
+	    my( @parts )	= split( /\s+/, $dep );
+	    my( $match )	= $parts[0];
+	    
+	    
+	    next		unless( $module eq $match );
+#	    print "* $dep\n";
+	    
+	    my( $package )	= pop( @parts );
+	    @parts		= split( /\//, $package );
+	    my( $name )		= pop( @parts );
+	    @parts		= split( /\-/, $name );
+	    pop( @parts );
+	    my( $formula )	= lc( join( "-", "perl", @parts ) );
+	    unless( exists( $seen->{$formula} ) )
+	    {
+		unless  (-f "$ENV{HOMEBREW_LIBRARY}/Tap/$cfg->{tap}/$formula.rb")
+		{
+		    unless( -f "$ENV{HOME}/.cache/$formula" )
+		    {
+			if (open( CREATE, ">$ENV{HOME}/.cache/$formula" ))
+			{
+			    print CREATE "export HOMEBREW_EDITOR=\"perl $cfg->{filer}\"\n";
+			    print CREATE join( " ",
+					       "brew create https://cpan.metacpan.org/authors/id/$package",
+					       "--autotools",
+					       "--set-name $formula",
+					       "--tap $cfg->{tap}\n",
+				);
+			    close( CREATE );
+			}
+			else
+			{
+			    print "ERROR: Unable to create $ENV{HOME}/.cache/$formula: $!\n";
+			}
+			$cfg->{count}++;
+		    }
+		}
+		push( @newlines, "  depends_on \"$formula\"\t$dependency" );
+		$seen->{$formula}	= 1;
+	    }
+	}
+	return( @newlines );
+    }
+    return();
 }
