@@ -25,11 +25,12 @@ This is an attempt to see how Homebrew works, based on the great idea behind Lin
   - git clone https://github.com/jfrotz/homebrew-scratchperl5modules.git
   - cp homebrew-scratchperl5modules/*.pl .
   - brew install perl
+  - brew install gcc
   - perl brew_a_cup.pl Test::WWW::Selenium
 
 # TESTING
   - I think I've figured out the "brew audit" issues.  Need to test across a depdendcy tree.
   - Figure out how these commands flow into brew_a_cup.pl
-    - brew audit --new-formula perl-test-www-selenium
-    - brew install perl-test-www-selenium
+    - brew install -d -i --build-bottle perl-test-www-selenium
     - brew test perl-test-www-selenium
+    - brew audit --new-formula perl-test-www-selenium
