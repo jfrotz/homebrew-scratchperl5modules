@@ -283,7 +283,7 @@ sub	pour_first_cup
 			);
 		    close( CREATE );
 		    $cfg->{cups}->{$formula}	= 0;
-		    return( $cup );
+		    return( $formula );
 		}
 		else
 		{
