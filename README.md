@@ -28,6 +28,8 @@ This is an attempt to see how Homebrew works, based on the great idea behind Lin
   - perl brew_a_cup.pl Test::WWW::Selenium
 
 # TESTING
+  - I think I've figured out the "brew audit" issues.  Need to test across a depdendcy tree.
   - Figure out how these commands flow into brew_a_cup.pl
+    - brew audit --new-formula perl-test-www-selenium
     - brew install perl-test-www-selenium
     - brew test perl-test-www-selenium
