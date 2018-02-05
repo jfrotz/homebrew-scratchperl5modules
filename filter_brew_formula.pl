@@ -59,13 +59,17 @@ This is the main entry point into this filter.
 
 sub	main
 {
+    my( $module )	= shift;
     my( $file )		= shift;
+
+    $file	= $module	if  ($file eq "");
     my( $cfg )		= 
     {
+	module	=> $module,
 	file	=> $file,				## The current module we're creating.
 	tap	=> "jfrotz/scratchperl5modules",	## The tap we're writing into.
 	count	=> 0,					## Number of dependencies we've found.
-	debug	=> 1,
+	debug	=> 0,
 	filter	=> $0,
 	cache	=> "$ENV{HOME}/.cache/Homebrew",
     };
@@ -193,6 +197,7 @@ sub	transform_formula
 	    }
 	    elsif  ($line =~ /desc/)
 	    {
+		$i++;
 		push( @newlines, extract_dist_metadata( $cfg ) );
 		next;
 	    }
@@ -288,11 +293,17 @@ sub	examine_dist
 		}
 		push( @newlines, 
 		      "  def install",
-		      "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		      "    system \"which\", \"perl\"",
+		      "    system \"which\", \"gcc\"",
+		      "    system \"which\", \"make\"",
+		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=\$HOMEBREW_FORMULA_PREFIX\"",
 		      "    system \"make\", \"install\"",
 		      "  end",
 		      "  test do",
-		      "    system \"perl\", \"Makefile.PL --prefix $prefix\"",
+		      "    system \"which\", \"perl\"",
+		      "    system \"which\", \"gcc\"",
+		      "    system \"which\", \"make\"",
+		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=\$HOMEBREW_FORMULA_PREFIX\"",
 		      "    system \"make\", \"test\"",
 		      "  end",
 		      "end",
@@ -308,14 +319,20 @@ sub	examine_dist
 		}
 		push( @newlines, 
 		      "  def install",
+		      "    system \"which\", \"perl\"",
+		      "    system \"which\", \"gcc\"",
+		      "    system \"which\", \"make\"",
 		      "    system \"perl\", \"Build.PL\"",
 		      "    system \"perl\", \"Build\"",
-		      "    system \"perl\", \"Build install --destdir $prefix\"",
+		      "    system \"perl\", \"Build\", \"install\", \"--destdir\", \"$prefix\"",
 		      "  end",
 		      "  test do",
+		      "    system \"which\", \"perl\"",
+		      "    system \"which\", \"gcc\"",
+		      "    system \"which\", \"make\"",
 		      "    system \"perl\", \"Build.PL\"",
 		      "    system \"perl\", \"Build\"",
-		      "    system \"perl\", \"Build test\"",
+		      "    system \"perl\", \"Build\", \"test\"",
 		      "  end",
 		      "end",
 		      "",
@@ -516,11 +533,27 @@ sub	emit_prerequisite_brew_create_commands
 			if (open( CREATE, ">$ENV{HOME}/.cache/$formula" ))
 			{
 			    print CREATE "export HOMEBREW_EDITOR=\"perl $cfg->{filter}\"\n";
+			    print CREATE "set -x\n";
 			    print CREATE join( " ",
 					       "brew create https://cpan.metacpan.org/authors/id/$package",
 					       "--autotools",
 					       "--set-name $formula",
 					       "--tap $cfg->{tap}\n",
+				);
+			    print CREATE join( " ",
+					       "brew install",
+#					       "--verbose",
+					       "--debug",
+					       "--env=std",
+					       "--ignore-dependencies",
+					       "--build-bottle",
+					       "$formula\n",
+				);
+			    print CREATE join( " ",
+					       "brew bottle",
+					       "--version",
+#					       "--verbose",
+					       "$formula\n",
 				);
 			    close( CREATE );
 			}
