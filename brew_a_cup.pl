@@ -58,6 +58,7 @@ sub	main
 	count	=> 0,					## Number of dependencies we've found.
 	cache	=> "$ENV{HOME}/.cache",
 	cups	=> {},					## $cfg->{cups}->{$formula} = 0 when needing to be poured
+	debug	=> 0,
     };
     
     rinse_cups( $cfg );					## Clean our environment while debugging.
@@ -97,7 +98,8 @@ sub	brew_first_cup
     $cfg->{count}++;
     my( $formula )	= pour_first_cup( $cfg, $module );
     print "$cfg->{count}: Brewing a cup of $formula...\n";
-    `sh $cfg->{cache}/$formula`;
+    my( @output )	= `sh $cfg->{cache}/$formula`;
+    print @output	if  ($cfg->{debug});
     $cfg->{cups}->{$formula}	= 1;
 }
 
@@ -176,6 +178,7 @@ sub	more_cups
 	    {
 		$cfg->{cups}->{$entry}	= 0;
 		$found	= 1;
+		print "Queuing $entry...\n"	if  ($cfg->{debug});
 	    }
 	}
     }
@@ -210,7 +213,8 @@ sub	pour_next_cup
 	{
 	    $cfg->{count}++;
 	    print "$cfg->{count}: Brewing a cup of $formula...\n";
-	    `sh $cfg->{cache}/$formula`;
+	    my( @output )	= `sh $cfg->{cache}/$formula`;
+	    print @output	if  ($cfg->{debug});
 	    $cfg->{cups}->{$formula}	= 1;
 	}
     }
