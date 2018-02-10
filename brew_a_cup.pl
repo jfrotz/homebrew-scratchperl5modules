@@ -58,7 +58,7 @@ sub	main
 	count	=> 0,					## Number of dependencies we've found.
 	cache	=> "$ENV{HOME}/.cache",
 	cups	=> {},					## $cfg->{cups}->{$formula} = 0 when needing to be poured
-	debug	=> 0,
+	verbose	=> 0,
     };
     
     rinse_cups( $cfg );					## Clean our environment while debugging.
@@ -97,9 +97,11 @@ sub	brew_first_cup
 
     $cfg->{count}++;
     my( $formula )	= pour_first_cup( $cfg, $module );
-    print "$cfg->{count}: Brewing a cup of $formula...\n";
-    my( @output )	= `sh $cfg->{cache}/$formula`;
-    print @output	if  ($cfg->{debug});
+    my( $time )		= `date --iso-8601=seconds`;
+    chomp( $time );
+    print "$cfg->{count}: $time: Brewing a cup of $formula...\n";
+    my( @output )	= `cat $cfg->{cache}/$formula`;
+    print @output	if  ($cfg->{verbose});
     $cfg->{cups}->{$formula}	= 1;
 }
 
@@ -178,7 +180,7 @@ sub	more_cups
 	    {
 		$cfg->{cups}->{$entry}	= 0;
 		$found	= 1;
-		print "Queuing $entry...\n"	if  ($cfg->{debug});
+		print "Queuing $entry...\n"	if  ($cfg->{verbose});
 	    }
 	}
     }
@@ -212,9 +214,11 @@ sub	pour_next_cup
 	unless  ($cfg->{cups}->{$formula})
 	{
 	    $cfg->{count}++;
-	    print "$cfg->{count}: Brewing a cup of $formula...\n";
-	    my( @output )	= `sh $cfg->{cache}/$formula`;
-	    print @output	if  ($cfg->{debug});
+	    my( $time )		= `date --iso-8601=seconds`;
+	    chomp( $time );
+	    print "$cfg->{count}: $time: Brewing a cup of $formula...\n";
+	    my( @output )	= `cat $cfg->{cache}/$formula`;
+	    print @output	if  ($cfg->{verbose});
 	    $cfg->{cups}->{$formula}	= 1;
 	}
     }
@@ -282,11 +286,33 @@ sub	pour_first_cup
 		if (open( CREATE, ">$cup" ))
 		{
 		    print CREATE "export HOMEBREW_EDITOR=\"perl $cfg->{filter}\"\n";
+		    print CREATE "set -x\n";
 		    print CREATE join( " ",
 				       "brew create https://cpan.metacpan.org/authors/id/$package",
+				       "--verbose",
 				       "--autotools",
 				       "--set-name $formula",
 				       "--tap $cfg->{tap}\n",
+			);
+		    print CREATE join( " ",
+				       "brew install",
+				       "--verbose",
+				       "--debug",
+				       "--env=std",
+				       "--ignore-dependencies",
+				       "--build-bottle",
+				       "$formula\n",
+			);
+		    print CREATE join( " ",
+				       "brew postinstall",
+				       "--verbose",
+				       "$cfg->{tap}/$formula\n",
+			);
+		    print CREATE join( " ",
+				       "brew bottle",
+				       "--version",
+				       "--verbose",
+				       "$formula\n",
 			);
 		    close( CREATE );
 		    $cfg->{cups}->{$formula}	= 0;
