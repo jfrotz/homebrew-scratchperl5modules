@@ -293,17 +293,11 @@ sub	examine_dist
 		}
 		push( @newlines, 
 		      "  def install",
-		      "    system \"which\", \"perl\"",
-		      "    system \"which\", \"gcc\"",
-		      "    system \"which\", \"make\"",
-		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=\$HOMEBREW_FORMULA_PREFIX\"",
+		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=#{prefix}\"",
 		      "    system \"make\", \"install\"",
 		      "  end",
 		      "  test do",
-		      "    system \"which\", \"perl\"",
-		      "    system \"which\", \"gcc\"",
-		      "    system \"which\", \"make\"",
-		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=\$HOMEBREW_FORMULA_PREFIX\"",
+		      "    system \"perl\", \"Makefile.PL\", \"PREFIX=#{prefix}\"",
 		      "    system \"make\", \"test\"",
 		      "  end",
 		      "end",
@@ -319,17 +313,12 @@ sub	examine_dist
 		}
 		push( @newlines, 
 		      "  def install",
-		      "    system \"which\", \"perl\"",
-		      "    system \"which\", \"gcc\"",
-		      "    system \"which\", \"make\"",
+		      "    system \"echo\", \"perl Build.PL --destdir=#{prefix}\"",
 		      "    system \"perl\", \"Build.PL\"",
 		      "    system \"perl\", \"Build\"",
-		      "    system \"perl\", \"Build\", \"install\", \"--destdir\", \"$prefix\"",
+		      "    system \"perl\", \"Build\", \"install\", \"--destdir\", \"#{prefix}\"",
 		      "  end",
 		      "  test do",
-		      "    system \"which\", \"perl\"",
-		      "    system \"which\", \"gcc\"",
-		      "    system \"which\", \"make\"",
 		      "    system \"perl\", \"Build.PL\"",
 		      "    system \"perl\", \"Build\"",
 		      "    system \"perl\", \"Build\", \"test\"",
@@ -536,13 +525,14 @@ sub	emit_prerequisite_brew_create_commands
 			    print CREATE "set -x\n";
 			    print CREATE join( " ",
 					       "brew create https://cpan.metacpan.org/authors/id/$package",
+					       "--verbose",
 					       "--autotools",
 					       "--set-name $formula",
 					       "--tap $cfg->{tap}\n",
 				);
 			    print CREATE join( " ",
 					       "brew install",
-#					       "--verbose",
+					       "--verbose",
 					       "--debug",
 					       "--env=std",
 					       "--ignore-dependencies",
@@ -552,8 +542,13 @@ sub	emit_prerequisite_brew_create_commands
 			    print CREATE join( " ",
 					       "brew bottle",
 					       "--version",
-#					       "--verbose",
+					       "--verbose",
 					       "$formula\n",
+				);
+			    print CREATE join( " ",
+					       "brew postinstall",
+					       "--verbose",
+					       "$cfg->{tap}/$formula\n",
 				);
 			    close( CREATE );
 			}
@@ -564,7 +559,7 @@ sub	emit_prerequisite_brew_create_commands
 			$cfg->{count}++;
 		    }
 		}
-		push( @newlines, "  depends_on \"$formula\" $dependency" );
+####		push( @newlines, "  depends_on \"$formula\" $dependency" );
 		$seen->{$formula}	= 1;
 	    }
 	}
